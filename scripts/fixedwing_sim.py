@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from cyecca.models import fixedwing, lookupTableFixedwing
+from cyecca.models import fixedwing_3ch, lookupTableFixedwing
 
 # from cyecca.models.lookupTableFixedwing import build_tables
 import casadi as ca
@@ -79,7 +79,7 @@ class Simulator(Node):
         # -------------------------------------------------------
         # Dynamics
         # ----------------------------------------------
-        dynamics = fixedwing
+        dynamics = fixedwing_3ch
         self.model = dynamics.derive_model(coeff_data=self.coeff_data)
         self.x0_dict = self.model["x0_defaults"]
         if x0 is not None:
@@ -227,7 +227,7 @@ class Simulator(Node):
                     self.Info["alpha"] * RAD2DEG, self.Info["beta"] * RAD2DEG
                 )
 
-                dynamics = fixedwing
+                dynamics = fixedwing_3ch
                 # print("Cm", self.coeff_data["Cm"])
                 self.model = dynamics.derive_model(coeff_data=self.coeff_data)
 

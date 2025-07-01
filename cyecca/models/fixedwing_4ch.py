@@ -1,6 +1,6 @@
 """
-Fixed-Wing Vehicle Dynamics for E-Flite Night Vapor UAV
-3-channel input control: [Throttle, Elevator, Rudder]
+Fixed-Wing Vehicle Dynamics for HH Sport Cub S2
+4-channel input control: [Throttle, Aileron, Elevator, Rudder]
 """
 
 import casadi as ca
@@ -20,7 +20,7 @@ def saturate(x, min_val, max_val):
     return ca.if_else(x < min_val, min_val, ca.if_else(x > max_val, max_val, x))
 
 
-def derive_model(coeff_data):
+def derive_model():
     # p, parameters
     thr_max = ca.SX.sym("thr_max")  # maximum thrust
     m = ca.SX.sym("m")  # mass
@@ -32,20 +32,17 @@ def derive_model(coeff_data):
     Jy = ca.SX.sym("Jy")  # Moment of Inertia in y direction
     Jz = ca.SX.sym("Jz")  # Moment of Inertia in z direction
     J = ca.diag(ca.vertcat(Jx, Jy, Jz))  # Moment of Inertia Array
-    Cm_p = ca.SX.sym("Cm_p")  # moment coefficient for roll
-    Cm_q = ca.SX.sym("Cm_q")  # moment coefficient for pitch
-    Cm_r = ca.SX.sym("Cm_r")  # moment coefficent for yaw
     cbar = ca.SX.sym("cbar")  # mean chord (m)
     span = ca.SX.sym("span")  # wing span (m)
 
     # Control Moment
     Cm0 = ca.SX.sym("Cm0")  # Coefficient of Moment
-    # Clda = ca.SX.sym("Clda")  # roll moment coefficient based on aileron
+    Clda = ca.SX.sym("Clda")  # roll moment coefficient based on aileron
     Cldr = ca.SX.sym("Cldr")  # roll moment coefficient based on rudder
     Cmde = ca.SX.sym("Cmde")  # pitch moment coefficient based on elevator
     Cndr = ca.SX.sym("Cndr")  # yaw moment coefficient based on rudder
-    # Cnda = ca.SX.sym("Cnda")  # yaw moment coefficient based on aileron
-    # CYda = ca.SX.sym("CYda")  # Sideforce due to aileron
+    Cnda = ca.SX.sym("Cnda")  # yaw moment coefficient based on aileron
+    CYda = ca.SX.sym("CYda")  # Sideforce due to aileron
     CYdr = ca.SX.sym("CYdr")  # Sideforce due to rudder
 
     # Longitudinal Stability Coefficients
@@ -78,15 +75,15 @@ def derive_model(coeff_data):
         Jx,
         Jy,
         Jz,
-        Cm_p,
-        Cm_q,
-        Cm_r,
         cbar,
         span,
         Cm0,
+        Clda,
         Cldr,
         Cmde,
         Cndr,
+        Cnda,
+        CYda,
         CYdr,
         CL0,
         CLa,
@@ -119,9 +116,12 @@ def derive_model(coeff_data):
         "span": 0.34,  # Wingspan (m)
         # Control Effectiveness (Converted to radians)
         "Cm0": 0.01,  # Zero-lift pitching moment coefficient
-        "Cldr": 0.15,  # Rudder Control effectiveness in roll
-        "Cmde": 0.25,  # Elevator control effectiveness in pitch(per rad)
+        "Clda": 0.16,  # Aileron control effectiveness in roll(per rad)
+        "Cldr": 0.05,  # Rudder Control effectiveness in roll
+        "Cmde": 0.15,  # Elevator control effectiveness in pitch(per rad)
         "Cndr": 0.10,  # Rudder control effectiveness in yaw (per rad)
+        "Cnda": 0.03,  # Aileron control effectiveness in yaw (per rad)
+        "CYda": 0.02,  # Sideforce due to aileron defelction (per rad)
         "CYdr": -0.08,  # Side force due to rudder deflection (per rad)
         # Longitudinal Stability
         "CL0": 0.6,  # Adjusted lift coefficient at zero AoA
@@ -163,11 +163,7 @@ def derive_model(coeff_data):
         "velocity_b_1": 0.0,
         "velocity_b_2": 0.0,
         "quat_wb_0": 0.0,
-<<<<<<< HEAD
         "quat_wb_1": 0.09,
-=======
-        "quat_wb_1": 0.0,
->>>>>>> cogni/main
         "quat_wb_2": 0.0,
         "quat_wb_3": 1.0,
         "omega_wb_b_0": 0.0,
@@ -177,10 +173,11 @@ def derive_model(coeff_data):
 
     # input
     throttle_cmd = ca.SX.sym("throttle_cmd")
+    ail_cmd = ca.SX.sym("ail_cmd")
     elev_cmd = ca.SX.sym("elev_cmd")
     rud_cmd = ca.SX.sym("rud_cmd")
 
-    u = ca.vertcat(throttle_cmd, elev_cmd, rud_cmd)
+    u = ca.vertcat(throttle_cmd, ail_cmd, elev_cmd, rud_cmd)
 
     xAxis = ca.vertcat(1, 0, 0)
     yAxis = ca.vertcat(0, 1, 0)
@@ -226,14 +223,15 @@ def derive_model(coeff_data):
 
     ##############################################################################################
     # Control Surface Defelction
-    max_defl = 30  # maximum control surface deflection in deg
-    max_defl_elev = 24
-    elev_rad = max_defl_elev * DEG2RAD * u[1]
-    rud_rad = max_defl * DEG2RAD * u[2]
+    max_defl_ail = 30  # maximum aileron deflection in deg
+    max_defl_elev = 24  # maximum elevator deflection in deg
+    max_defl_rud = 20  # maximum rudder deflection in deg
+    ail_rad = max_defl_ail * DEG2RAD * u[1] * -1  # mapped for HH Sport Cub 2
+    elev_rad = max_defl_elev * DEG2RAD * u[2] * -1  # mapped for HH Sport Cub 2
+    rud_rad = max_defl_rud * DEG2RAD * u[3]
     ##############################################################################################
 
     # Force and Moment Model
-    cl = cl0 + cla * (-1 * alpha)  # Lift Coefficient
 
     # ##############################################################################################
     # ## From Look Up table
@@ -255,8 +253,10 @@ def derive_model(coeff_data):
     CD = CD0 + CDCLS * CL * CL  # Drag Polar
 
     # (Steven pg 91 eqn 2.3-17a) and (Steven Pg 79 eqn 2.3-8b)
-    CC = -CYb * beta + CYdr * rud_rad / (
-        max_defl * DEG2RAD
+    CC = (
+        -CYb * beta
+        + CYda * ail_rad / (max_defl_ail * DEG2RAD)
+        + CYdr * rud_rad / (max_defl_rud * DEG2RAD)
     )  # Crosswind Force Coefficient
     CC += (
         CYp * span / (2 * V_b) * P
@@ -266,11 +266,11 @@ def derive_model(coeff_data):
     )  # Sideforce due to yaw rate #(Steven pg 91 eqn 2.3-17a)
 
     ### Using Equation to calculate rotational moment coefficent
-    Cl = (-1) * Cldr * rud_rad  # roll moment coefficient
+    Cl = Clda * ail_rad + (-1) * Cldr * rud_rad  # roll moment coefficient
     Cm = Cm0 + Cma * alpha + Cmde * elev_rad  # pitch moment coefficient
-    Cn = Cnb * beta + Cndr * rud_rad  # yaw moment coefficient
+    Cn = Cnb * beta + Cndr * rud_rad + (-1) * Cnda * ail_rad  # yaw moment coefficient
     ### Using Lookup table to obtain rotational moment coefficent
-    # Cl = cl
+    # Cl = cl + Cmda * ail_rad/(max_defl*DEG2RAD)
     # Cm = cm
     # Cn = cn + Cndr * rud_rad/(max_defl*DEG2RAD)
 
@@ -394,6 +394,7 @@ def derive_model(coeff_data):
             alpha,
             qbar,
             beta,
+            ail_rad,
             elev_rad,
             rud_rad,
             Cndr,
@@ -412,6 +413,7 @@ def derive_model(coeff_data):
             "alpha",
             "qbar",
             "beta",
+            "ail",
             "elev",
             "rud",
             "Cndr",

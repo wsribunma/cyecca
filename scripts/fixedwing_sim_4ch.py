@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from cyecca.models import fixedwing, lookupTableFixedwing
+from cyecca.models import fixedwing_4ch, lookupTableFixedwing
 
 # from cyecca.models.lookupTableFixedwing import build_tables
 import casadi as ca
@@ -47,11 +47,11 @@ class Simulator(Node):
         # ----------------------------------------------
         self.sub_joy = self.create_subscription(Joy, "/joy", self.joy_callback, 1)
         self.sub_auto_joy = self.create_subscription(
-            Joy, "/auto_joy", self.auto_joy_callback, 1
+            Joy, "cub1/auto_joy", self.auto_joy_callback, 1
         )
 
-        self.input_aetr = ca.vertcat(0.0, 0.0, 0.0)
-        self.input_auto = ca.vertcat(0.0, 0.0, 0.0)
+        self.input_aetr = ca.vertcat(0.0, 0.0, 0.0, 0.0)
+        self.input_auto = ca.vertcat(0.0, 0.0, 0.0, 0.0)
 
         self.t = 0.0
         self.dt = 0.01
@@ -60,27 +60,13 @@ class Simulator(Node):
         # -------------------------------------------------------
         # mode handling
         # ----------------------------------------------
-        self.input_mode = "auto"
+        self.input_mode = "manual"
 
-        # -------------------------------------------------------
-        #  Lookup Table
-        # -------------------------------------------------------
-
-        self.lookup_tab = lookupTableFixedwing.build_tables()
-        self.coeff_data = {
-            "CL": 0.0,
-            "CD": 0.0,
-            "Cl": 0.0,
-            "Cm": 0.0,
-            "Cn": 0.0,
-            "Cmdr": 0.0,
-            "Cmda": 0.0,
-        }
         # -------------------------------------------------------
         # Dynamics
         # ----------------------------------------------
-        dynamics = fixedwing
-        self.model = dynamics.derive_model(coeff_data=self.coeff_data)
+        dynamics = fixedwing_4ch
+        self.model = dynamics.derive_model()
         self.x0_dict = self.model["x0_defaults"]
         if x0 is not None:
             for k in x0.keys():
@@ -105,7 +91,6 @@ class Simulator(Node):
             dtype=float,
         )
         self.u = np.zeros(4, dtype=float)
-
         # start main loop on timer
         self.system_clock = rclpy.clock.Clock(
             clock_type=rclpy.clock.ClockType.SYSTEM_TIME
@@ -143,10 +128,10 @@ class Simulator(Node):
     def auto_joy_callback(self, msg: Joy):
         self.input_auto = ca.vertcat(
             msg.axes[0],  # thrust
-            # msg.axes[1],  # aileron
+            msg.axes[1],  # aileron
             -msg.axes[2],  # elevator -- positive = elevator down (pitch up)
-            msg.axes[1],  # rudder
-        )  # TER
+            msg.axes[3],  # rudder
+        )  # TAER
 
     def clock_as_msg(self):
         msg = Clock()
@@ -168,29 +153,30 @@ class Simulator(Node):
         #         float(self.input_aetr[3]),
         #     )
 
-        # NVP Mapped with Roll Control
+        # Sport Cub Mapped Control Inputs
         if self.input_mode == "manual":  # logitech f310
-            self.u = ca.vertcat(  # TER mode 3-Channel
+            self.u = ca.vertcat(  # TAER mode 4-Channel mapped from aetr format
                 float(self.input_aetr[2]),
-<<<<<<< HEAD
-=======
-                float(self.input_aetr[0]),
->>>>>>> cogni/main
-                float(self.input_aetr[1]),
-                -1 * float(self.input_aetr[0]),
+                float(-1 * self.input_aetr[0]),
+                float(-1 * self.input_aetr[1]),
+                float(self.input_aetr[3]),
             )
-            print("manual input", self.u)
+            vals = self.u.full().flatten()
+            self.get_logger().info(
+                "manual input TAER: [%.2f, %.2f, %.2f, %.2f]" % tuple(vals)
+            )
+
         elif self.input_mode == "auto":
-            self.u = ca.vertcat(  # TER mode 3-Channel
+            self.u = ca.vertcat(  # TAER mode 4-Channel
                 float(self.input_auto[0]),
                 float(self.input_auto[1]),
                 float(self.input_auto[2]),
-<<<<<<< HEAD
-=======
-                float(self.input_auto[3]),  # Rudder directly affects yaw for nvp
->>>>>>> cogni/main
+                float(self.input_auto[3]),
             )
-            print("auto input", self.u)
+            vals = self.u.full().flatten()
+            self.get_logger().info(
+                "auto input TAER: [%.2f, %.2f, %.2f, %.2f]" % tuple(vals)
+            )
         else:
             self.get_logger().info("unhandled mode: %s" % self.input_mode)
             self.u = ca.vertcat(float(0), float(0), float(0), float(0))
@@ -202,43 +188,8 @@ class Simulator(Node):
         RAD2DEG = 180 / ca.pi
 
         try:
-            # Grab from Look Up Table
-            if self.Info == None:
-                self.Info = {}
-                self.Info["alpha"] = 0.0
-                self.Info["beta"] = 0.0
-                # self.Info["ail"] = 0.0
-                self.Info["elev"] = 0.0
-                self.Info["rud"] = 0.0
-
-            else:
-                self.coeff_data["CD"] = -1 * self.lookup_tab["Cx"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["elev"] * RAD2DEG
-                )
-                self.coeff_data["Cmdr"] = -1 * self.lookup_tab["DnDr"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["beta"] * RAD2DEG / 2
-                )
-                self.coeff_data["Cmda"] = -1 * self.lookup_tab["DlDa"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["beta"] * RAD2DEG / 2
-                )
-                self.coeff_data["CL"] = self.lookup_tab["Cz"](
-                    self.Info["alpha"] * RAD2DEG,
-                    self.Info["beta"] * RAD2DEG,
-                    self.Info["elev"] * RAD2DEG,
-                )
-                self.coeff_data["Cl"] = -1 * self.lookup_tab["Cl"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["beta"] * RAD2DEG
-                )
-                self.coeff_data["Cm"] = -1 * self.lookup_tab["Cm"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["elev"] * RAD2DEG
-                )
-                self.coeff_data["Cn"] = -1 * self.lookup_tab["Cn"](
-                    self.Info["alpha"] * RAD2DEG, self.Info["beta"] * RAD2DEG
-                )
-
-                dynamics = fixedwing
-                # print("Cm", self.coeff_data["Cm"])
-                self.model = dynamics.derive_model(coeff_data=self.coeff_data)
+            dynamics = fixedwing_4ch
+            self.model = dynamics.derive_model()
 
             # opts = {"abstol": 1e-9,"reltol":1e-9,"fsens_err_con": True,"calc_ic":True,"calc_icB":True}
             opts = {"abstol": 1e-2, "reltol": 1e-6, "fsens_err_con": True}
