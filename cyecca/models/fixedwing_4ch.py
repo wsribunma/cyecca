@@ -147,9 +147,9 @@ def derive_model():
         "CD0": 0.09,  # Parasitic drag coefficient
         "CDCLS": 0.062,  # Lift-induced drag coefficient
         # Lateral-Directional Stability
-        "Cnb": 0.10,  # Yaw stiffness (per rad)
+        "Cnb": 0.20,  # Yaw stiffness (per rad)
         "Clp": -1.30,  # Roll damping per rad/s
-        "Cnr": -0.12,  # Yaw damping per rad/s
+        "Cnr": -0.22,  # Yaw damping per rad/s
         "Cnp": -0.10,  # Yaw damping due to roll rate
         "Clr": 0.10,  # Roll damping due to yaw rate
         "CYb": -0.65,  # Sideforce due to sideslip (per rad)
